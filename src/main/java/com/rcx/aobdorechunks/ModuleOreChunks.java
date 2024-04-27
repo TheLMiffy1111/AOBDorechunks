@@ -1,34 +1,42 @@
 package com.rcx.aobdorechunks;
 
-import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
-import com.google.common.collect.Lists;
-import com.rcx.aobdorechunks.item.ItemOrechunk;
+import com.google.common.collect.ImmutableMap;
 
-import net.minecraft.client.renderer.block.model.ModelResourceLocation;
 import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraftforge.common.config.Configuration;
-import net.minecraftforge.fml.common.registry.GameRegistry;
+import net.minecraftforge.fml.common.event.FMLInitializationEvent;
 import net.minecraftforge.oredict.OreDictionary;
-import thelm.jaopca.api.EnumEntryType;
-import thelm.jaopca.api.IOreEntry;
-import thelm.jaopca.api.ItemEntry;
 import thelm.jaopca.api.JAOPCAApi;
-import thelm.jaopca.api.ModuleBase;
-import thelm.jaopca.api.item.ItemProperties;
-import thelm.jaopca.api.utils.Utils;
+import thelm.jaopca.api.config.IDynamicSpecConfig;
+import thelm.jaopca.api.forms.IForm;
+import thelm.jaopca.api.forms.IFormRequest;
+import thelm.jaopca.api.helpers.IMiscHelper;
+import thelm.jaopca.api.items.IItemFormType;
+import thelm.jaopca.api.items.IItemInfo;
+import thelm.jaopca.api.materials.IMaterial;
+import thelm.jaopca.api.materials.MaterialType;
+import thelm.jaopca.api.modules.IModule;
+import thelm.jaopca.api.modules.IModuleData;
+import thelm.jaopca.api.modules.JAOPCAModule;
+import thelm.jaopca.items.ItemFormType;
+import thelm.jaopca.utils.ApiImpl;
+import thelm.jaopca.utils.MiscHelper;
 
-public class ModuleOreChunks extends ModuleBase {
+@JAOPCAModule
+public class ModuleOreChunks implements IModule {
 
-	public static final ItemProperties ORECHUNK_PROPERTIES = new ItemProperties().setItemClass(ItemOrechunk.class);
-	public static final ItemEntry ORECHUNK_ENTRY = new ItemEntry(EnumEntryType.ITEM, "oreChunk", new ModelResourceLocation("jaopcaoc:orechunk_stone#inventory")).setProperties(ORECHUNK_PROPERTIES);
+	public static String processingUnit;
+	public static HashMap<String, OreInfos> dropMap = new HashMap<>();
+	public static HashMap<IMaterial, FirstOreInfos> oreInformation = new HashMap<>();
 
-	public static HashMap<String, OreInfos> dropMap = new HashMap<String, OreInfos>();
-	public static List<FirstOreInfos> oreInformation = new ArrayList<FirstOreInfos>();
-	String processingUnit;
+	private final IForm oreChunkForm = ApiImpl.INSTANCE.newForm(this, "ore_chunk", ItemFormType.INSTANCE).
+			setMaterialTypes(MaterialType.INGOT).setSecondaryName("oreChunk").
+			setSettings(ItemFormType.INSTANCE.getNewSettings().
+					setItemModelFunctionCreator(OrechunkModelFunctionCreator.INSTANCE));
 
 	@Override
 	public String getName() {
@@ -36,80 +44,79 @@ public class ModuleOreChunks extends ModuleBase {
 	}
 
 	@Override
-	public List<ItemEntry> getItemRequests() {
-		return Lists.<ItemEntry>newArrayList(ORECHUNK_ENTRY);
+	public List<IFormRequest> getFormRequests() {
+		return Collections.singletonList(oreChunkForm.toRequest());
 	}
 
 	@Override
-	public void registerConfigs(Configuration config) {
-		for(IOreEntry entry : JAOPCAApi.ENTRY_NAME_TO_ORES_MAP.get("oreChunk")) {
-			String stoneType;
-			String stoneComment = "The stone type for this ore, only has a visual effect";
-			if (entry.getOreName().equals("Eximite") || entry.getOreName().equals("Meutoite")) {
-				stoneType = config.getString("stoneType", Utils.to_under_score(entry.getOreName()), "end", stoneComment);
-			} else if (entry.getOreName().equals("Cobalt") || entry.getOreName().equals("Ardite") || entry.getOreName().equals("Ignatius") || entry.getOreName().equals("ShadowIron") || entry.getOreName().equals("Lemurite") || entry.getOreName().equals("Midasium") || entry.getOreName().equals("Vyroxeres") || entry.getOreName().equals("Ceruclase") || entry.getOreName().equals("Alduorite") || entry.getOreName().equals("Kalendrite") || entry.getOreName().equals("Vulcanite") || entry.getOreName().equals("Sanguinite")) {
-				stoneType = config.getString("stoneType", Utils.to_under_score(entry.getOreName()), "nether", stoneComment);
-			} else {
-				stoneType = config.getString("stoneType", Utils.to_under_score(entry.getOreName()), "stone", stoneComment);
+	public void defineModuleConfig(IModuleData moduleData, IDynamicSpecConfig config) {
+		processingUnit = config.getDefinedString("processingUnit", "ore", "The ore dictionary prefix for ore chunks, set this to \"dust\" to prevent ore multiplication of ore chunks");
+	}
+
+	@Override
+	public void defineMaterialConfig(IModuleData moduleData, Map<IMaterial, IDynamicSpecConfig> configs) {
+		for(IMaterial material : oreChunkForm.getMaterials()) {
+			IDynamicSpecConfig config = configs.get(material);
+			String stoneType = "stone";
+			if (material.getName().equals("Eximite") || material.getName().equals("Meutoite")) {
+				stoneType = "end";
+			} else if (material.getName().equals("Cobalt") || material.getName().equals("Ardite") || material.getName().equals("Ignatius") || material.getName().equals("ShadowIron") || material.getName().equals("Lemurite") || material.getName().equals("Midasium") || material.getName().equals("Vyroxeres") || material.getName().equals("Ceruclase") || material.getName().equals("Alduorite") || material.getName().equals("Kalendrite") || material.getName().equals("Vulcanite") || material.getName().equals("Sanguinite")) {
+				stoneType = "nether";
 			}
-			oreInformation.add(new FirstOreInfos(entry, stoneType,
-			config.getInt("dropCount", Utils.to_under_score(entry.getOreName()), 1, 1, 100, "The amount of ore chunks dropped by this ore"),
-			config.getInt("minXPDrop", Utils.to_under_score(entry.getOreName()), 1, 0, 1000, "The minimum amount of XP dropped by this ore"),
-			config.getInt("maxXPDrop", Utils.to_under_score(entry.getOreName()), 4, 0, 1000, "The maximum amount of XP dropped by this ore")));
+			config.getDefinedString("orechunks.stoneType", stoneType, "The stone type for this ore, only has a visual effect");
+			oreInformation.put(material, new FirstOreInfos(stoneType,
+			config.getDefinedInt("orechunks.dropCount", 1, 1, 100, "The amount of ore chunks dropped by this ore"),
+			config.getDefinedInt("orechunks.minXPDrop", 1, 0, 1000, "The minimum amount of XP dropped by this ore"),
+			config.getDefinedInt("orechunks.maxXPDrop", 4, 0, 1000, "The maximum amount of XP dropped by this ore")));
 		}
-		processingUnit = config.getString("processingUnit", "ore_chunks", "ore", "The ore dictionary prefix for ore chunks, set this to \"dust\" to prevent ore multiplication of ore chunks");
 	}
 
 	@Override
-	public void preInit() {
-		for(FirstOreInfos info : oreInformation) {
-			ItemStack oreStack = Utils.getOreStack("oreChunk", info.entry, 1);
-
-			OreDictionary.registerOre(processingUnit + info.entry.getOreName(), oreStack);
-			
-			// aluminum/aluminium nonsense
-			if (info.entry.getOreName().equals("Aluminum")) {
-				OreDictionary.registerOre(processingUnit + "Aluminium", oreStack);
-				OreDictionary.registerOre("oreChunk" + "Aluminium", oreStack);
-			}
-			if (info.entry.getOreName().equals("Aluminium")) {
-				OreDictionary.registerOre(processingUnit + "Aluminum", oreStack);
-				OreDictionary.registerOre("oreChunk" + "Aluminum", oreStack);
+	public void onMaterialComputeComplete(IModuleData moduleData) {
+		for(IMaterial material : oreChunkForm.getMaterials()) {
+			Item oreItem = ItemFormType.INSTANCE.getMaterialFormInfo(oreChunkForm, material).asItem();
+			OreDictionary.registerOre(processingUnit + material.getName(), oreItem);
+			for(String alternativeName : material.getAlternativeNames()) {
+				OreDictionary.registerOre(processingUnit + alternativeName, oreItem);
 			}
 		}
 	}
 
 	@Override
-	public void init() {
-		for(FirstOreInfos info : oreInformation) {
-			ItemStack oreStack = Utils.getOreStack("oreChunk", info.entry, 1);
-			
-			//recipe stuff
-			GameRegistry.addSmelting(oreStack, Utils.getOreStack("ingot", info.entry, 1), 1F);
+	public void onInit(IModuleData moduleData, FMLInitializationEvent event) {
+		JAOPCAApi api = ApiImpl.INSTANCE;
+		IMiscHelper miscHelper = MiscHelper.INSTANCE;
+		IItemFormType itemFormType = ItemFormType.INSTANCE;
+		for(IMaterial material : oreChunkForm.getMaterials()) {
+			String oreOredict = miscHelper.getOredictName("ore", material.getName());
+			IItemInfo oreChunkInfo = itemFormType.getMaterialFormInfo(oreChunkForm, material);
+			String oreChunkOredict = miscHelper.getOredictName("oreChunk", material.getName());
+			String materialOredict = miscHelper.getOredictName(material.getType().getFormName(), material.getName());
 
-			//make it drop
-			OreInfos infos = new OreInfos(oreStack.getItem(), info.count, info.minXP, info.maxXP);
-			dropMap.put("ore" + info.entry.getOreName(), infos);
+			FirstOreInfos info = oreInformation.get(material);
+			OreInfos infos = new OreInfos(oreChunkInfo.asItem(), info.count, info.minXP, info.maxXP);
+			dropMap.put(oreOredict, infos);
 
-			// aluminum/aluminium nonsense
-			if (info.entry.getOreName().equals("Aluminum")) {
-				dropMap.put("oreAluminium", infos);
-			}
-			if (info.entry.getOreName().equals("Aluminium")) {
-				dropMap.put("oreAluminum", infos);
-			}
+			api.registerSmeltingRecipe(
+					miscHelper.getRecipeKey("orechunks.ore_chunk_to_material", material.getName()),
+					oreChunkOredict, materialOredict, 1, 1F);
 		}
+	}
+
+	@Override
+	public Map<String, String> getLegacyRemaps() {
+		ImmutableMap.Builder<String, String> builder = ImmutableMap.builder();
+		builder.put("orechunk", "ore_chunk");
+		return builder.build();
 	}
 
 	public class FirstOreInfos {
-		public IOreEntry entry;
 		public String stoneType;
 		public int count;
 		public int minXP;
 		public int maxXP;
 
-		public FirstOreInfos(IOreEntry oreEntry, String stone, int baseCount, int dropXPMin, int dropXPMax) {
-			entry = oreEntry;
+		public FirstOreInfos(String stone, int baseCount, int dropXPMin, int dropXPMax) {
 			stoneType = stone;
 			count = baseCount;
 			minXP = dropXPMin;
